@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'services/progress_service.dart';
 import 'services/photo_verification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/progress_screen.dart';
+import 'screens/login_screen.dart';
+import 'providers/auth_provider.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,19 +31,40 @@ void main() async {
   await ProgressService().init();
   PhotoVerificationService().init();
 
-  runApp(const AnalogGateApp());
+  // Init Supabase
+  await Supabase.initialize(
+    url: 'YOUR_SUPABASE_URL',
+    anonKey: 'YOUR_SUPABASE_ANON_KEY',
+  );
+
+  runApp(const ProviderScope(child: AnalogGateApp()));
 }
 
-class AnalogGateApp extends StatelessWidget {
+class AnalogGateApp extends ConsumerWidget {
   const AnalogGateApp({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final authState = ref.watch(authStateProvider);
+
     return MaterialApp(
       title: 'Analog Gate',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark,
-      home: const _RootShell(),
+      home: authState.when(
+        data: (state) {
+          if (state.session != null) {
+            return const _RootShell();
+          } else {
+            return const LoginScreen();
+          }
+        },
+        loading: () => const Scaffold(
+          backgroundColor: AppTheme.background,
+          body: Center(child: CircularProgressIndicator(color: AppTheme.accent)),
+        ),
+        error: (error, _) => const LoginScreen(),
+      ),
     );
   }
 }
