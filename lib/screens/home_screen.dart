@@ -1,21 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../services/mission_data.dart';
 import '../services/progress_service.dart';
+import '../providers/auth_provider.dart';
 import '../widgets/mission_card.dart';
 import '../widgets/locked_app_chip.dart';
 import '../widgets/streak_bar.dart';
 import 'gate_screen.dart';
+import 'settings_screen.dart';
+import '../services/app_monitor_service.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   late List<Mission>   _missions;
   late List<LockedApp> _apps;
   final _svc = ProgressService();
@@ -126,7 +130,21 @@ class _HomeScreenState extends State<HomeScreen> {
                           style: TextStyle(color: AppTheme.textPrimary, fontSize: 24,
                               fontWeight: FontWeight.w500)),
                     ]),
-                    _XpBadge(xp: _svc.totalXp),
+                    Row(
+                      children: [
+                        _XpBadge(xp: _svc.totalXp),
+                        const SizedBox(width: 4),
+                        IconButton(
+                          icon: const Icon(Icons.settings_rounded, color: AppTheme.textMuted, size: 20),
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ],
                 ).animate().fadeIn(duration: 400.ms),
               ),

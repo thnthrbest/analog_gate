@@ -1,28 +1,31 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../services/photo_verification_service.dart';
+import '../services/gemini_verification_service.dart';
 import '../services/progress_service.dart';
+import '../providers/profile_provider.dart';
 
 enum _Step { prompt, verifying, success, failed }
 
-class GateScreen extends StatefulWidget {
+class GateScreen extends ConsumerStatefulWidget {
   final Mission           mission;
   final List<LockedApp>   lockedApps;
   const GateScreen({super.key, required this.mission, required this.lockedApps});
   @override
-  State<GateScreen> createState() => _GateScreenState();
+  ConsumerState<GateScreen> createState() => _GateScreenState();
 }
 
-class _GateScreenState extends State<GateScreen> {
+class _GateScreenState extends ConsumerState<GateScreen> {
   _Step   _step = _Step.prompt;
   String? _photoPath;
   VerificationResult? _result;
 
-  final _verifier  = PhotoVerificationService();
+  final _verifier  = GeminiVerificationService();
   final _progress  = ProgressService();
   final _picker    = ImagePicker();
 
@@ -35,9 +38,12 @@ class _GateScreenState extends State<GateScreen> {
       _step = _Step.verifying;
     });
 
-    final result = await _verifier.verify(
+    final profileService = ref.read(profileServiceProvider);
+    
+    final result = await _verifier.verifyWithAI(
       imagePath: file.path,
-      requiredLabels: widget.mission.aiLabels,
+      profileImagePath: profileService.cachedAvatarPath, // Pass the face!
+      requiredObject: widget.mission.aiLabels.isNotEmpty ? widget.mission.aiLabels.first : widget.mission.title,
     );
 
     if (!mounted) return;

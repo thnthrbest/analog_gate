@@ -1,15 +1,15 @@
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
-import 'api_service.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import '../models/user_profile.dart';
+import 'mission_data.dart';
 
-/// ProgressService ใหม่ — sync ข้อมูลกับ backend
-/// ถ้า API ล้มเหลวจะ fallback ไปใช้ local cache
 class ProgressService {
   static final ProgressService _i = ProgressService._();
   factory ProgressService() => _i;
   ProgressService._();
 
-  final _api = ApiService();
+  final _supabase = Supabase.instance.client;
   late SharedPreferences _prefs;
 
   int          _totalXp            = 0;
@@ -30,50 +30,112 @@ class ProgressService {
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     _loadFromCache();
-    await _syncFromApi();
+    
+    // Non-blocking Supabase sync with timeout — app starts even if DB is unreachable
+    try {
+      await MissionData.loadFromSupabase().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      print('Mission load skipped (offline): $e');
+    }
+    try {
+      await _syncFromSupabase().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      print('Progress sync skipped (offline): $e');
+    }
   }
 
-  Future<void> _syncFromApi() async {
+  Future<void> _syncFromSupabase() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
     try {
-      await _api.registerUser();
-      final data = await _api.getProgress();
-      _totalXp           = data.totalXp;
-      _streak            = data.streak;
-      _todayCompleted    = data.todayCompleted;
-      _todayUnlockedApps = data.todayUnlockedApps;
-      _weekHistory       = data.weekHistory;
+      final data = await _supabase.from('profiles').select().eq('id', user.id).maybeSingle();
+      if (data == null) return;
+
+      final profile = UserProfile.fromJson(data);
+      
+      _handleStreakLogic(profile);
+      
+      _totalXp = profile.totalXp;
+      _todayCompleted = profile.todayCompleted;
+      _todayUnlockedApps = profile.todayUnlocked;
+      
       _saveToCache();
-    } catch (_) {}
+    } catch (e) {
+      print('Sync Error: $e');
+    }
+  }
+
+  void _handleStreakLogic(UserProfile profile) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    
+    _streak = profile.currentStreak;
+    _weekHistory = profile.weekHistory;
+
+    if (profile.lastActiveDate != null) {
+      final lastActive = DateTime(profile.lastActiveDate!.year, profile.lastActiveDate!.month, profile.lastActiveDate!.day);
+      final difference = today.difference(lastActive).inDays;
+
+      if (difference == 1) {
+        // Logged in consecutive day! Streak maintained (it will increase when they complete a mission)
+      } else if (difference > 1) {
+        // Streak broken
+        _streak = 0;
+        _weekHistory = List.filled(7, false);
+      } else if (difference == 0) {
+        // Already active today, do nothing to streak
+      }
+    }
   }
 
   Future<bool> completeMission(String missionKey, int xp) async {
-    if (!_todayCompleted.contains(missionKey)) {
-      _todayCompleted = [..._todayCompleted, missionKey];
-      _totalXp += xp;
+    if (_todayCompleted.contains(missionKey)) return true; // Already done
+
+    _todayCompleted = [..._todayCompleted, missionKey];
+    _totalXp += xp;
+    
+    // Update streak history for today
+    final dayOfWeek = DateTime.now().weekday % 7; // Sunday=0, Monday=1...
+    _weekHistory[dayOfWeek] = true;
+    
+    // Check if it's their first mission today to increment streak
+    if (_todayCompleted.length == 1) {
+      _streak += 1;
     }
+
     _saveToCache();
-    try {
-      final result = await _api.completeMission(
-        missionKey: missionKey,
-        verified: true,
-      );
-      _totalXp = result.totalXp;
-      _streak  = result.streak;
-      _saveToCache();
-      return result.success;
-    } catch (_) {
-      return true;
-    }
+    await _saveToSupabase();
+    return true;
   }
 
   Future<void> unlockApp(String appId) async {
     if (!_todayUnlockedApps.contains(appId)) {
       _todayUnlockedApps = [..._todayUnlockedApps, appId];
+      _saveToCache();
+      await _saveToSupabase();
     }
-    _saveToCache();
+  }
+
+  Future<void> _saveToSupabase() async {
+    final user = _supabase.auth.currentUser;
+    if (user == null) return;
+
     try {
-      await _api.unlockApp(appId);
-    } catch (_) {}
+      final now = DateTime.now();
+      await _supabase.from('profiles').upsert({
+        'id': user.id,
+        'total_xp': _totalXp,
+        'current_streak': _streak,
+        'last_active_date': "${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}",
+        'today_completed': _todayCompleted,
+        'today_unlocked': _todayUnlockedApps,
+        'week_history': _weekHistory,
+        'updated_at': now.toUtc().toIso8601String(),
+      });
+    } catch (e) {
+      print('Save Error: $e');
+    }
   }
 
   void _loadFromCache() {
@@ -82,6 +144,7 @@ class ProgressService {
     final c = _prefs.getString('completed_$_todayKey');
     final u = _prefs.getString('unlocked_$_todayKey');
     final w = _prefs.getString('week_history');
+    
     _todayCompleted    = c != null ? List<String>.from(jsonDecode(c)) : [];
     _todayUnlockedApps = u != null ? List<String>.from(jsonDecode(u)) : [];
     _weekHistory       = w != null ? List<bool>.from(jsonDecode(w)) : List.filled(7, false);

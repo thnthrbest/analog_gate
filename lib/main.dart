@@ -1,14 +1,28 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'services/progress_service.dart';
-import 'services/photo_verification_service.dart';
+import 'services/gemini_verification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/progress_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/overlay_screen.dart';
+import 'screens/permission_screen.dart';
 import 'providers/auth_provider.dart';
+
+@pragma("vm:entry-point")
+void overlayMain() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MaterialApp(
+    debugShowCheckedModeBanner: false,
+    home: OverlayScreen(),
+  ));
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,24 +41,48 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
+  // Supabase URL: uses 127.0.0.1 for both emulator and real device
+  // For real device: run "adb reverse tcp:54321 tcp:54321" first!
+  const supabaseUrl = 'http://127.0.0.1:54321';
+
+  // Init Supabase (with timeout so app doesn't hang if Supabase is offline)
+  bool supabaseReady = false;
+  try {
+    await Supabase.initialize(
+      url: supabaseUrl,
+      anonKey: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
+    ).timeout(const Duration(seconds: 8));
+    supabaseReady = true;
+    print('Supabase connected successfully!');
+  } catch (e) {
+    print('Supabase init failed (offline mode): $e');
+  }
+
   // Init services
-  await ProgressService().init();
-  PhotoVerificationService().init();
+  GeminiVerificationService().init();
+  if (supabaseReady) {
+    await ProgressService().init();
+  }
 
-  // Init Supabase
-  await Supabase.initialize(
-    url: 'YOUR_SUPABASE_URL',
-    anonKey: 'YOUR_SUPABASE_ANON_KEY',
-  );
-
-  runApp(const ProviderScope(child: AnalogGateApp()));
+  runApp(ProviderScope(child: AnalogGateApp(supabaseReady: supabaseReady)));
 }
 
 class AnalogGateApp extends ConsumerWidget {
-  const AnalogGateApp({super.key});
+  final bool supabaseReady;
+  const AnalogGateApp({super.key, this.supabaseReady = true});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // If Supabase is not available, go straight to HomeScreen (offline mode)
+    if (!supabaseReady) {
+      return MaterialApp(
+        title: 'Analog Gate',
+        debugShowCheckedModeBanner: false,
+        theme: AppTheme.dark,
+        home: const _RootShell(),
+      );
+    }
+
     final authState = ref.watch(authStateProvider);
 
     return MaterialApp(
@@ -78,6 +116,33 @@ class _RootShell extends StatefulWidget {
 
 class _RootShellState extends State<_RootShell> {
   int _currentIndex = 0;
+  bool _permissionsChecked = false;
+  bool _showPermissionScreen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkIfPermissionsSeen();
+  }
+
+  Future<void> _checkIfPermissionsSeen() async {
+    final prefs = await SharedPreferences.getInstance();
+    final seen = prefs.getBool('permissions_seen') ?? false;
+    if (mounted) {
+      setState(() {
+        _permissionsChecked = true;
+        _showPermissionScreen = !seen;
+      });
+    }
+  }
+
+  Future<void> _onPermissionsDone() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('permissions_seen', true);
+    if (mounted) {
+      setState(() => _showPermissionScreen = false);
+    }
+  }
 
   static const _screens = [
     HomeScreen(),
@@ -86,6 +151,17 @@ class _RootShellState extends State<_RootShell> {
 
   @override
   Widget build(BuildContext context) {
+    if (!_permissionsChecked) {
+      return const Scaffold(
+        backgroundColor: AppTheme.background,
+        body: Center(child: CircularProgressIndicator(color: AppTheme.accent)),
+      );
+    }
+
+    if (_showPermissionScreen) {
+      return PermissionScreen(onComplete: _onPermissionsDone);
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.background,
       body: IndexedStack(

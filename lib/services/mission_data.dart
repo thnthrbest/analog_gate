@@ -1,10 +1,50 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 
 class MissionData {
-  static final List<Mission> all = [
-    // ── Outdoor ──────────────────────────────────────────────
+  // Static cache of all missions. Defaults to hardcoded offline fallback list.
+  static List<Mission> all = _fallbackList;
+
+  /// Fetches missions from Supabase and updates the cache.
+  static Future<void> loadFromSupabase() async {
+    try {
+      final supabase = Supabase.instance.client;
+      final response = await supabase.from('missions').select();
+      
+      if (response.isNotEmpty) {
+        final List<Mission> loadedMissions = response
+            .map<Mission>((json) => Mission.fromJson(json))
+            .toList();
+        
+        all = loadedMissions;
+        print('Successfully loaded ${all.length} missions from Supabase!');
+      }
+    } catch (e) {
+      print('Failed to load missions from Supabase, using fallback: $e');
+    }
+  }
+
+  /// Pick 3 missions for today — deterministic by date so they don't change mid-day.
+  static List<Mission> todaysMissions() {
+    final seed = DateTime.now().day + DateTime.now().month * 31;
+    final pool  = List<Mission>.from(all);
+    for (int i = pool.length - 1; i > 0; i--) {
+      final j = (seed * (i + 7)) % (i + 1);
+      final t = pool[i]; pool[i] = pool[j]; pool[j] = t;
+    }
+    // Return fresh copies so completion state is per-session
+    return pool.take(3).map((m) => Mission(
+      id: m.id, title: m.title, description: m.description,
+      photoPrompt: m.photoPrompt, difficulty: m.difficulty,
+      category: m.category, xp: m.xp, aiLabels: m.aiLabels,
+      icon: m.icon, iconColor: m.iconColor, iconBg: m.iconBg,
+    )).toList();
+  }
+
+  // ── Hardcoded Offline Fallback List ───────────────────────────
+  static final List<Mission> _fallbackList = [
     Mission(
       id: 'walk_outside',
       title: 'Take a short walk',
@@ -57,7 +97,6 @@ class MissionData {
       iconColor: AppTheme.amber,
       iconBg: AppTheme.amberDim,
     ),
-    // ── Reading ───────────────────────────────────────────────
     Mission(
       id: 'open_book',
       title: 'Open a physical book',
@@ -71,91 +110,7 @@ class MissionData {
       iconColor: AppTheme.amber,
       iconBg: AppTheme.amberDim,
     ),
-    Mission(
-      id: 'newspaper',
-      title: 'Read a physical newspaper',
-      description: 'Ink on paper. Notice how slow and satisfying it is.',
-      photoPrompt: 'Photo of a printed newspaper or magazine.',
-      difficulty: MissionDifficulty.medium,
-      category: MissionCategory.reading,
-      xp: 40,
-      aiLabels: ['newspaper','magazine','publication','text','paper','news'],
-      icon: Icons.article_rounded,
-      iconColor: AppTheme.teal,
-      iconBg: AppTheme.tealDim,
-    ),
-    // ── Creativity ────────────────────────────────────────────
-    Mission(
-      id: 'draw_something',
-      title: 'Draw or doodle something',
-      description: 'Pen and paper. No eraser required. 5 minutes.',
-      photoPrompt: 'Photo of your drawing or doodle on paper.',
-      difficulty: MissionDifficulty.medium,
-      category: MissionCategory.creativity,
-      xp: 40,
-      aiLabels: ['drawing','sketch','art','paper','pen','pencil','handwriting'],
-      icon: Icons.draw_rounded,
-      iconColor: AppTheme.pink,
-      iconBg: AppTheme.pinkDim,
-    ),
-    Mission(
-      id: 'write_journal',
-      title: 'Write 3 sentences in a journal',
-      description: 'Handwritten. Any 3 sentences about your day or thoughts.',
-      photoPrompt: 'Photo of your handwritten journal or notebook.',
-      difficulty: MissionDifficulty.medium,
-      category: MissionCategory.creativity,
-      xp: 45,
-      aiLabels: ['handwriting','notebook','paper','text','writing','journal'],
-      icon: Icons.edit_note_rounded,
-      iconColor: AppTheme.purple,
-      iconBg: AppTheme.purpleDim,
-    ),
-    // ── Mindfulness ───────────────────────────────────────────
-    Mission(
-      id: 'make_tea',
-      title: 'Make a cup of tea or coffee',
-      description: 'The slow way. No instant. Notice the process.',
-      photoPrompt: 'Photo of your cup of tea or coffee.',
-      difficulty: MissionDifficulty.easy,
-      category: MissionCategory.mindfulness,
-      xp: 25,
-      aiLabels: ['cup','coffee','tea','drink','mug','beverage'],
-      icon: Icons.coffee_rounded,
-      iconColor: AppTheme.amber,
-      iconBg: AppTheme.amberDim,
-    ),
-    Mission(
-      id: 'stretching',
-      title: 'Do 5 minutes of stretching',
-      description: 'Stand up, reach, breathe. Your body will thank you.',
-      photoPrompt: 'Photo of your space — mat, floor, or open area.',
-      difficulty: MissionDifficulty.easy,
-      category: MissionCategory.movement,
-      xp: 30,
-      aiLabels: ['floor','mat','room','indoor','yoga mat','carpet'],
-      icon: Icons.self_improvement_rounded,
-      iconColor: AppTheme.teal,
-      iconBg: AppTheme.tealDim,
-    ),
   ];
-
-  /// Pick 3 missions for today — deterministic by date so they don't change mid-day.
-  static List<Mission> todaysMissions() {
-    final seed = DateTime.now().day + DateTime.now().month * 31;
-    final pool  = List<Mission>.from(all);
-    for (int i = pool.length - 1; i > 0; i--) {
-      final j = (seed * (i + 7)) % (i + 1);
-      final t = pool[i]; pool[i] = pool[j]; pool[j] = t;
-    }
-    // Return fresh copies so completion state is per-session
-    return pool.take(3).map((m) => Mission(
-      id: m.id, title: m.title, description: m.description,
-      photoPrompt: m.photoPrompt, difficulty: m.difficulty,
-      category: m.category, xp: m.xp, aiLabels: m.aiLabels,
-      icon: m.icon, iconColor: m.iconColor, iconBg: m.iconBg,
-    )).toList();
-  }
 }
 
 class AppData {
@@ -177,7 +132,7 @@ class AppData {
       icon: Icons.play_circle_outline_rounded,
       iconColor: AppTheme.green,
       iconBg: AppTheme.greenDim,
-      requiredMissionIds: ['open_book', 'newspaper'],
+      requiredMissionIds: ['open_book', 'eye_break_20'],
       sessionMinutes: 30,
     ),
     LockedApp(
@@ -187,7 +142,7 @@ class AppData {
       icon: Icons.music_note_rounded,
       iconColor: AppTheme.pink,
       iconBg: AppTheme.pinkDim,
-      requiredMissionIds: ['basketball', 'stretching'],
+      requiredMissionIds: ['basketball', 'posture_stretch'],
       sessionMinutes: 20,
     ),
   ];

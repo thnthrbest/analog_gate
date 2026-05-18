@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../theme/app_theme.dart';
 
 enum MissionDifficulty { easy, medium, hard }
 enum MissionCategory  { outdoor, reading, movement, creativity, mindfulness }
@@ -34,6 +35,62 @@ class Mission {
     this.isCompleted = false,
     this.photoPath,
   });
+
+  factory Mission.fromJson(Map<String, dynamic> json) {
+    final iconName = json['icon_name'] as String? ?? 'walk';
+    final colorName = json['color_name'] as String? ?? 'accent';
+
+    return Mission(
+      id: json['id'] as String,
+      title: json['title'] as String,
+      description: json['description'] as String,
+      photoPrompt: json['photo_prompt'] as String,
+      difficulty: MissionDifficulty.values.firstWhere(
+        (e) => e.name == (json['difficulty'] as String?),
+        orElse: () => MissionDifficulty.easy,
+      ),
+      category: MissionCategory.values.firstWhere(
+        (e) => e.name == (json['category'] as String?),
+        orElse: () => MissionCategory.mindfulness,
+      ),
+      xp: json['xp'] as int? ?? 10,
+      aiLabels: List<String>.from(json['ai_labels'] ?? []),
+      icon: _mapIcon(iconName),
+      iconColor: _mapColor(colorName, dim: false),
+      iconBg: _mapColor(colorName, dim: true),
+    );
+  }
+
+  static IconData _mapIcon(String name) {
+    switch (name) {
+      case 'walk': return Icons.directions_walk_rounded;
+      case 'tree': return Icons.park_rounded;
+      case 'sun': return Icons.wb_sunny_rounded;
+      case 'basketball': return Icons.sports_basketball_rounded;
+      case 'book': return Icons.menu_book_rounded;
+      case 'article': return Icons.article_rounded;
+      case 'draw': return Icons.draw_rounded;
+      case 'edit': return Icons.edit_note_rounded;
+      case 'coffee': return Icons.coffee_rounded;
+      case 'stretch': return Icons.self_improvement_rounded;
+      case 'eye': return Icons.remove_red_eye_rounded;
+      case 'water': return Icons.local_drink_rounded;
+      case 'wrist': return Icons.pan_tool_rounded;
+      default: return Icons.task_alt_rounded;
+    }
+  }
+
+  static Color _mapColor(String name, {required bool dim}) {
+    switch (name) {
+      case 'accent': return dim ? AppTheme.accentDim : AppTheme.accent;
+      case 'green': return dim ? AppTheme.greenDim : AppTheme.green;
+      case 'amber': return dim ? AppTheme.amberDim : AppTheme.amber;
+      case 'teal': return dim ? AppTheme.tealDim : AppTheme.teal;
+      case 'pink': return dim ? AppTheme.pinkDim : AppTheme.pink;
+      case 'purple': return dim ? AppTheme.purpleDim : AppTheme.purple;
+      default: return dim ? AppTheme.accentDim : AppTheme.accent;
+    }
+  }
 
   String get difficultyLabel => switch (difficulty) {
     MissionDifficulty.easy   => 'Easy',
