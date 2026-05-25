@@ -1,9 +1,40 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:android_intent_plus/android_intent.dart';
+import 'package:android_intent_plus/flag.dart';
 import '../theme/app_theme.dart';
 
-class OverlayScreen extends StatelessWidget {
+class OverlayScreen extends StatefulWidget {
   const OverlayScreen({super.key});
+
+  @override
+  State<OverlayScreen> createState() => _OverlayScreenState();
+}
+
+class _OverlayScreenState extends State<OverlayScreen> {
+  bool _testingMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkTestingMode();
+  }
+
+  Future<void> _checkTestingMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _testingMode = prefs.getBool('testing_mode') ?? false;
+    });
+  }
+
+  Future<void> _bypassForTesting() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('accumulated_usage_seconds', 0);
+    await prefs.remove('baseline_usage_seconds'); // Reset baseline for testing bypass too!
+    await FlutterOverlayWindow.closeOverlay();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -36,10 +67,24 @@ class OverlayScreen extends StatelessWidget {
               ),
               const SizedBox(height: 48),
               ElevatedButton(
-                onPressed: () {
-                  // In a real scenario, this should open the main app
-                  // Currently, we just close the overlay for testing
-                  FlutterOverlayWindow.closeOverlay();
+                onPressed: () async {
+                  try {
+                    const intent = AndroidIntent(
+                      action: 'android.intent.action.MAIN',
+                      package: 'com.example.analog_gate',
+                      componentName: 'com.example.analog_gate.MainActivity',
+                      category: 'android.intent.category.LAUNCHER',
+                      flags: <int>[Flag.FLAG_ACTIVITY_NEW_TASK],
+                    );
+                    await intent.launch();
+                  } catch (e) {
+                    print('Could not launch app: $e');
+                  }
+                  
+                  // Add a short delay to ensure the system processes the intent
+                  // before we kill the overlay context.
+                  await Future.delayed(const Duration(milliseconds: 500));
+                  await FlutterOverlayWindow.closeOverlay();
                 },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppTheme.accent,
@@ -57,6 +102,24 @@ class OverlayScreen extends StatelessWidget {
                   ),
                 ),
               ),
+              if (_testingMode) ...[
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: _bypassForTesting,
+                  icon: const Icon(Icons.refresh_rounded, color: AppTheme.pink),
+                  label: const Text(
+                    'Bypass (Testing Only)',
+                    style: TextStyle(color: AppTheme.pink, fontSize: 16, fontWeight: FontWeight.bold),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: AppTheme.pink, width: 1.5),
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ],
             ],
           ),
         ),

@@ -45,7 +45,7 @@ class PhotoVerificationService {
         matchedLabel: matched,
         detectedLabels: topLabels,
         message: matched != null
-            ? '${_cap(matched!)} detected ✓'
+            ? '${_cap(matched)} detected ✓'
             : 'Photo doesn\'t match the mission. Try a clearer photo.',
       );
     } catch (_) {

@@ -30,7 +30,12 @@ class _GateScreenState extends ConsumerState<GateScreen> {
   final _picker    = ImagePicker();
 
   Future<void> _pickPhoto(ImageSource src) async {
-    final file = await _picker.pickImage(source: src, imageQuality: 85);
+    final file = await _picker.pickImage(
+      source: src,
+      maxWidth: 800,
+      maxHeight: 800,
+      imageQuality: 80,
+    );
     if (file == null) return;
 
     setState(() {
@@ -53,7 +58,7 @@ class _GateScreenState extends ConsumerState<GateScreen> {
     });
 
     if (result.success) {
-      await _progress.completeMission(widget.mission.id, widget.mission.xp);
+      await _progress.onActiveMissionCompleted(widget.mission.id, widget.mission.xp);
     }
   }
 

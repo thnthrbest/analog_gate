@@ -2,10 +2,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../providers/profile_provider.dart';
 import '../providers/auth_provider.dart';
 import '../services/app_monitor_service.dart';
+import 'blocked_apps_screen.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -18,6 +20,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   final _picker = ImagePicker();
   bool _isUploading = false;
   bool _isSavingName = false;
+  bool _testingMode = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTestingMode();
+  }
+
+  Future<void> _loadTestingMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _testingMode = prefs.getBool('testing_mode') ?? false;
+    });
+  }
+
+  Future<void> _toggleTestingMode(bool value) async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _testingMode = value;
+    });
+    await prefs.setBool('testing_mode', value);
+  }
 
   Future<void> _updateAvatar() async {
     final pickedFile = await _picker.pickImage(
@@ -78,6 +102,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _requestPermissions() async {
     await AppMonitorService().requestPermissions();
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Requested app blocking permissions')),
     );
@@ -170,6 +195,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 onTap: () => _updateUsername(profile.username ?? ''),
               ),
               
+              const Divider(color: AppTheme.border, height: 40),
+
+              // App Blocking Configuration
+              const Text('App Blocking', style: TextStyle(color: AppTheme.textMuted, fontSize: 13)),
+              const SizedBox(height: 16),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.app_blocking_rounded, color: AppTheme.textSecondary),
+                title: const Text('Manage Blocked Apps', style: TextStyle(color: AppTheme.textPrimary)),
+                subtitle: const Text('Choose which apps to restrict and monitor.', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                trailing: const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.textMuted, size: 14),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const BlockedAppsScreen()),
+                  );
+                },
+              ),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                secondary: const Icon(Icons.speed_rounded, color: AppTheme.textSecondary),
+                title: const Text('Testing Mode (Fast Triggers)', style: TextStyle(color: AppTheme.textPrimary)),
+                subtitle: const Text('Trigger blocking overlay after 15s to 45s of app usage.', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                value: _testingMode,
+                activeThumbColor: AppTheme.background,
+                activeTrackColor: AppTheme.accent,
+                onChanged: (bool value) {
+                  _toggleTestingMode(value);
+                },
+              ),
+
               const Divider(color: AppTheme.border, height: 40),
 
               // System Permissions Section

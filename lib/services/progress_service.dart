@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/user_profile.dart';
@@ -17,12 +18,16 @@ class ProgressService {
   List<String> _todayCompleted     = [];
   List<String> _todayUnlockedApps  = [];
   List<bool>   _weekHistory        = List.filled(7, false);
+  String?      _activeMissionId;
+  int          _accumulatedUsageSeconds = 0;
 
   int          get totalXp        => _totalXp;
   int          get streakDays     => _streak;
   List<String> get todayCompleted => _todayCompleted;
   List<String> get todayUnlocked  => _todayUnlockedApps;
   List<bool>   get weekHistory    => _weekHistory;
+  String?      get activeMissionId => _activeMissionId;
+  int          get accumulatedUsageSeconds => _accumulatedUsageSeconds;
 
   bool isMissionDone(String id) => _todayCompleted.contains(id);
   bool isAppUnlocked(String id) => _todayUnlockedApps.contains(id);
@@ -30,6 +35,10 @@ class ProgressService {
   Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
     _loadFromCache();
+
+    if (_activeMissionId == null || _activeMissionId!.isEmpty) {
+      await rotateActiveMission();
+    }
     
     // Non-blocking Supabase sync with timeout — app starts even if DB is unreachable
     try {
@@ -54,11 +63,40 @@ class ProgressService {
 
       final profile = UserProfile.fromJson(data);
       
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      bool isNewDay = false;
+
+      if (profile.lastActiveDate != null) {
+        final lastActive = DateTime(
+          profile.lastActiveDate!.year,
+          profile.lastActiveDate!.month,
+          profile.lastActiveDate!.day,
+        );
+        final difference = today.difference(lastActive).inDays;
+        if (difference >= 1) {
+          isNewDay = true;
+        }
+      } else {
+        isNewDay = true;
+      }
+
       _handleStreakLogic(profile);
       
       _totalXp = profile.totalXp;
-      _todayCompleted = profile.todayCompleted;
-      _todayUnlockedApps = profile.todayUnlocked;
+      
+      if (isNewDay) {
+        // Clear yesterday's completed tasks and unlocked apps
+        _todayCompleted = [];
+        _todayUnlockedApps = [];
+        
+        // Write cleared lists and current streak to Supabase so that DB is reset too
+        await _saveToSupabase();
+        print('🧹 Sync: New day detected. Wiped Supabase completed lists and synchronized streak: $_streak');
+      } else {
+        _todayCompleted = profile.todayCompleted;
+        _todayUnlockedApps = profile.todayUnlocked;
+      }
       
       _saveToCache();
     } catch (e) {
@@ -148,6 +186,8 @@ class ProgressService {
     _todayCompleted    = c != null ? List<String>.from(jsonDecode(c)) : [];
     _todayUnlockedApps = u != null ? List<String>.from(jsonDecode(u)) : [];
     _weekHistory       = w != null ? List<bool>.from(jsonDecode(w)) : List.filled(7, false);
+    _activeMissionId   = _prefs.getString('active_mission_id');
+    _accumulatedUsageSeconds = _prefs.getInt('accumulated_usage_seconds') ?? 0;
   }
 
   void _saveToCache() {
@@ -156,6 +196,71 @@ class ProgressService {
     _prefs.setString('completed_$_todayKey', jsonEncode(_todayCompleted));
     _prefs.setString('unlocked_$_todayKey',  jsonEncode(_todayUnlockedApps));
     _prefs.setString('week_history',         jsonEncode(_weekHistory));
+    if (_activeMissionId != null) {
+      _prefs.setString('active_mission_id', _activeMissionId!);
+    }
+    _prefs.setInt('accumulated_usage_seconds', _accumulatedUsageSeconds);
+  }
+
+  Future<void> rotateActiveMission() async {
+    final missions = MissionData.all;
+    if (missions.isNotEmpty) {
+      final rand = Random();
+      final nextMission = missions[rand.nextInt(missions.length)];
+      _activeMissionId = nextMission.id;
+      _accumulatedUsageSeconds = 0;
+      _saveToCache();
+    }
+  }
+
+  Future<bool> rerollActiveMission() async {
+    final currentMission = MissionData.all.firstWhere(
+      (m) => m.id == _activeMissionId,
+      orElse: () => MissionData.all.first,
+    );
+
+    // Filter uncompleted alternative missions that are strictly SHORTER in duration
+    final candidates = MissionData.all.where((m) {
+      return m.id != currentMission.id &&
+          !_todayCompleted.contains(m.id) &&
+          m.duration < currentMission.duration;
+    }).toList();
+
+    if (candidates.isEmpty) {
+      return false; // No shorter alternative tasks
+    }
+
+    // Sort candidates by duration in descending order (closest to currentMission.duration first)
+    candidates.sort((a, b) {
+      final diffA = currentMission.duration - a.duration;
+      final diffB = currentMission.duration - b.duration;
+      return diffA.compareTo(diffB);
+    });
+
+    final nextMission = candidates.first;
+    _activeMissionId = nextMission.id;
+    await resetAccumulatedUsage();
+    
+    _saveToCache();
+    await _saveToSupabase();
+    return true;
+  }
+
+  Future<void> resetAccumulatedUsage() async {
+    _accumulatedUsageSeconds = 0;
+    await _prefs.setInt('accumulated_usage_seconds', 0);
+    await _prefs.remove('baseline_usage_seconds');
+  }
+
+  Future<void> setAccumulatedUsageSeconds(int seconds) async {
+    _accumulatedUsageSeconds = seconds;
+    await _prefs.setInt('accumulated_usage_seconds', seconds);
+  }
+
+  Future<void> onActiveMissionCompleted(String missionKey, int xp) async {
+    await completeMission(missionKey, xp);
+    await resetAccumulatedUsage();
+    await rotateActiveMission();
   }
 
   String get _todayKey {

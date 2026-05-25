@@ -13,6 +13,7 @@ class Mission {
   final MissionDifficulty difficulty;
   final MissionCategory  category;
   final int              xp;
+  final int              duration;   // duration in minutes
   final List<String>     aiLabels;   // ML Kit labels that count as valid proof
   final IconData         icon;
   final Color            iconColor;
@@ -28,6 +29,7 @@ class Mission {
     required this.difficulty,
     required this.category,
     required this.xp,
+    required this.duration,
     required this.aiLabels,
     required this.icon,
     required this.iconColor,
@@ -54,6 +56,7 @@ class Mission {
         orElse: () => MissionCategory.mindfulness,
       ),
       xp: json['xp'] as int? ?? 10,
+      duration: json['duration'] as int? ?? 10,
       aiLabels: List<String>.from(json['ai_labels'] ?? []),
       icon: _mapIcon(iconName),
       iconColor: _mapColor(colorName, dim: false),

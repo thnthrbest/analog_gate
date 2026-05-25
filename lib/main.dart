@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,6 +13,10 @@ import 'screens/login_screen.dart';
 import 'screens/overlay_screen.dart';
 import 'screens/permission_screen.dart';
 import 'providers/auth_provider.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart'; // optional, but keep existing
+import 'package:permission_handler/permission_handler.dart';
+import 'services/app_monitor_service.dart';
+import 'services/notification_service.dart';
 
 @pragma("vm:entry-point")
 void overlayMain() {
@@ -41,16 +44,15 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  // Supabase URL: uses 127.0.0.1 for both emulator and real device
-  // For real device: run "adb reverse tcp:54321 tcp:54321" first!
-  const supabaseUrl = 'http://127.0.0.1:54321';
+  // Supabase URL: Pointing to the new VPS server
+  const supabaseUrl = 'http://187.77.157.222:8000';
 
   // Init Supabase (with timeout so app doesn't hang if Supabase is offline)
   bool supabaseReady = false;
   try {
     await Supabase.initialize(
       url: supabaseUrl,
-      anonKey: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
+      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE',
     ).timeout(const Duration(seconds: 8));
     supabaseReady = true;
     print('Supabase connected successfully!');
@@ -60,9 +62,11 @@ void main() async {
 
   // Init services
   GeminiVerificationService().init();
+  await NotificationService().init();
   if (supabaseReady) {
     await ProgressService().init();
   }
+  await AppMonitorService().initBackgroundService();
 
   runApp(ProviderScope(child: AnalogGateApp(supabaseReady: supabaseReady)));
 }
@@ -125,14 +129,31 @@ class _RootShellState extends State<_RootShell> {
     _checkIfPermissionsSeen();
   }
 
+
   Future<void> _checkIfPermissionsSeen() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // Check actual active permissions
+    final cameraStatus = await Permission.camera.status;
+    final notificationStatus = await Permission.notification.status;
+    final batteryStatus = await Permission.ignoreBatteryOptimizations.status;
+    final overlayStatus = await Permission.systemAlertWindow.status;
+    
+    final allGranted = cameraStatus.isGranted && 
+                       notificationStatus.isGranted && 
+                       batteryStatus.isGranted && 
+                       overlayStatus.isGranted;
+
     final seen = prefs.getBool('permissions_seen') ?? false;
+    
     if (mounted) {
       setState(() {
         _permissionsChecked = true;
-        _showPermissionScreen = !seen;
+        _showPermissionScreen = !seen || !allGranted;
       });
+    }
+    if (seen && allGranted) {
+      AppMonitorService().startMonitoring();
     }
   }
 
@@ -142,6 +163,7 @@ class _RootShellState extends State<_RootShell> {
     if (mounted) {
       setState(() => _showPermissionScreen = false);
     }
+    AppMonitorService().startMonitoring();
   }
 
   static const _screens = [

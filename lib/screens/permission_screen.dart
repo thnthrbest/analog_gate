@@ -1,6 +1,8 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:android_intent_plus/android_intent.dart';
 import '../theme/app_theme.dart';
 import '../services/app_monitor_service.dart';
 
@@ -16,6 +18,8 @@ class _PermissionScreenState extends State<PermissionScreen> {
   bool _cameraGranted = false;
   bool _overlayGranted = false;
   bool _usageGranted = false; // We can't check this programmatically, user confirms manually
+  bool _notificationGranted = false;
+  bool _batteryOptimizationGranted = false;
 
   @override
   void initState() {
@@ -25,6 +29,8 @@ class _PermissionScreenState extends State<PermissionScreen> {
 
   Future<void> _checkPermissions() async {
     final cameraStatus = await Permission.camera.status;
+    final notificationStatus = await Permission.notification.status;
+    final batteryStatus = await Permission.ignoreBatteryOptimizations.status;
     bool overlayStatus = false;
     try {
       overlayStatus = await _checkOverlayPermission();
@@ -33,7 +39,9 @@ class _PermissionScreenState extends State<PermissionScreen> {
     if (mounted) {
       setState(() {
         _cameraGranted = cameraStatus.isGranted;
+        _notificationGranted = notificationStatus.isGranted;
         _overlayGranted = overlayStatus;
+        _batteryOptimizationGranted = batteryStatus.isGranted;
       });
     }
   }
@@ -60,13 +68,34 @@ class _PermissionScreenState extends State<PermissionScreen> {
   }
 
   Future<void> _requestUsageAccess() async {
-    // Open Usage Access settings page
-    await openAppSettings();
+    if (Platform.isAndroid) {
+      try {
+        const intent = AndroidIntent(
+          action: 'android.settings.USAGE_ACCESS_SETTINGS',
+        );
+        await intent.launch();
+      } catch (e) {
+        // Fallback
+        await openAppSettings();
+      }
+    } else {
+      await openAppSettings();
+    }
     // We assume user granted it if they clicked
     setState(() => _usageGranted = true);
   }
 
-  bool get _allGranted => _cameraGranted && _overlayGranted && _usageGranted;
+  Future<void> _requestNotification() async {
+    final status = await Permission.notification.request();
+    setState(() => _notificationGranted = status.isGranted);
+  }
+
+  Future<void> _requestBatteryOptimization() async {
+    final status = await Permission.ignoreBatteryOptimizations.request();
+    setState(() => _batteryOptimizationGranted = status.isGranted);
+  }
+
+  bool get _allGranted => _cameraGranted && _overlayGranted && _usageGranted && _notificationGranted && _batteryOptimizationGranted;
 
   @override
   Widget build(BuildContext context) {
@@ -78,31 +107,32 @@ class _PermissionScreenState extends State<PermissionScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const SizedBox(height: 40),
+              const SizedBox(height: 30),
               
               // Header
               const Icon(Icons.shield_rounded, color: AppTheme.accent, size: 48)
                   .animate().fadeIn(duration: 400.ms).slideY(begin: -0.3),
-              const SizedBox(height: 20),
+              const SizedBox(height: 16),
               const Text(
                 'App Permissions',
                 style: TextStyle(
                   color: AppTheme.textPrimary,
-                  fontSize: 28,
+                  fontSize: 26,
                   fontWeight: FontWeight.bold,
                 ),
               ).animate().fadeIn(delay: 100.ms),
               const SizedBox(height: 8),
               const Text(
-                'Analog Gate needs these permissions to block apps and verify your missions with the camera.',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 14, height: 1.5),
+                'Analog Gate needs these permissions to block apps, notify you, and verify your missions.',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, height: 1.5),
               ).animate().fadeIn(delay: 200.ms),
 
-              const SizedBox(height: 40),
+              const SizedBox(height: 24),
 
               // Permission Cards
               Expanded(
                 child: ListView(
+                  physics: const BouncingScrollPhysics(),
                   children: [
                     _PermissionCard(
                       icon: Icons.camera_alt_rounded,
@@ -113,7 +143,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
                       onRequest: _requestCamera,
                     ).animate().fadeIn(delay: 300.ms).slideX(begin: -0.1),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
                     _PermissionCard(
                       icon: Icons.layers_rounded,
@@ -124,7 +154,7 @@ class _PermissionScreenState extends State<PermissionScreen> {
                       onRequest: _requestOverlay,
                     ).animate().fadeIn(delay: 400.ms).slideX(begin: -0.1),
 
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
 
                     _PermissionCard(
                       icon: Icons.bar_chart_rounded,
@@ -134,9 +164,33 @@ class _PermissionScreenState extends State<PermissionScreen> {
                       isGranted: _usageGranted,
                       onRequest: _requestUsageAccess,
                     ).animate().fadeIn(delay: 500.ms).slideX(begin: -0.1),
+
+                    const SizedBox(height: 12),
+
+                    _PermissionCard(
+                      icon: Icons.notifications_active_rounded,
+                      iconColor: AppTheme.accent,
+                      title: 'Notifications',
+                      description: 'Required to alert you immediately when your screen time limit has been exceeded.',
+                      isGranted: _notificationGranted,
+                      onRequest: _requestNotification,
+                    ).animate().fadeIn(delay: 550.ms).slideX(begin: -0.1),
+
+                    const SizedBox(height: 12),
+
+                    _PermissionCard(
+                      icon: Icons.battery_saver_rounded,
+                      iconColor: AppTheme.green,
+                      title: 'Battery Optimization Exemption',
+                      description: 'Required to ensure the background screen-time tracking service runs continuously without being suspended by the OS.',
+                      isGranted: _batteryOptimizationGranted,
+                      onRequest: _requestBatteryOptimization,
+                    ).animate().fadeIn(delay: 575.ms).slideX(begin: -0.1),
                   ],
                 ),
               ),
+
+              const SizedBox(height: 16),
 
               // Bottom Button
               SizedBox(

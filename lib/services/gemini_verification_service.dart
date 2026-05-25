@@ -8,13 +8,16 @@ class GeminiVerificationService {
   GeminiVerificationService._();
 
   // TODO: Replace with actual Gemini API Key (get from Google AI Studio)
-  static const _apiKey = 'AIzaSyCAZbs3_DGnFgSgg0Nq7wjZUtWO4plUBgw'; 
+  static const _apiKey = String.fromEnvironment(
+    'GEMINI_API_KEY',
+    defaultValue: 'YOUR_GEMINI_API_KEY',
+  );
 
   late final GenerativeModel _model;
 
   void init() {
     _model = GenerativeModel(
-      model: 'gemini-2.5-flash',
+      model: 'gemini-2.5-flash-lite',
       apiKey: _apiKey,
     );
   }

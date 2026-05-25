@@ -1,41 +1,48 @@
 import 'dart:async';
-import 'dart:math';
+import 'dart:ui';
 import 'package:app_usage/app_usage.dart';
+import 'package:usage_stats/usage_stats.dart';
 import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_background_service/flutter_background_service.dart';
+import 'mission_data.dart';
+import '../models/models.dart';
+import 'notification_service.dart';
+
+@pragma('vm:entry-point')
+void onStart(ServiceInstance service) async {
+  DartPluginRegistrant.ensureInitialized();
+  
+  if (service is AndroidServiceInstance) {
+    // Promote the service to a foreground service immediately to prevent OS from suspending/killing it
+    service.setAsForegroundService();
+
+    service.on('setAsForeground').listen((event) {
+      service.setAsForegroundService();
+    });
+    service.on('setAsBackground').listen((event) {
+      service.setAsBackgroundService();
+    });
+  }
+
+  service.on('stopService').listen((event) {
+    service.stopSelf();
+  });
+
+  // Run the monitoring loop in the background isolate
+  Timer.periodic(const Duration(seconds: 5), (timer) async {
+    await AppMonitorService()._checkUsageAndBlock();
+  });
+}
 
 class AppMonitorService {
   static final AppMonitorService _i = AppMonitorService._();
   factory AppMonitorService() => _i;
   AppMonitorService._();
 
-  Timer? _timer;
   bool _isMonitoring = false;
-
-  // The packages we want to block (e.g., YouTube, TikTok)
-  final List<String> _targetPackages = [
-    'com.google.android.youtube',
-    'com.zhiliaoapp.musically', // TikTok
-  ];
-
-  // --- Medical & Screen-Addiction Parameters ---
-  final bool _testingMode = true; // ⚡ TESTING: Triggers after 10 seconds!
-
-  // 1. Daily accumulated usage limit (in minutes)
-  final int _dailyMaxLimitMinutes = 30;
-
-  // 2. 20-20-20 Eye Strain Rule (Continuous SECONDS in test mode)
-  int get _continuousEyeLimitSeconds => _testingMode ? 10 : 20 * 60;
-
-  // 3. Posture Fatigue Break
-  int get _continuousPostureLimitSeconds => _testingMode ? 30 : 45 * 60;
-
-  // 4. Dopamine Habit Loop Breaker
-  int get _habitBreakerTriggerSeconds => _testingMode ? 8 : 15 * 60;
-  final double _randomTriggerChance = 1.0; // 100% in test mode for guaranteed trigger
-
-  // Trackers for continuous usage (in seconds)
-  final Map<String, int> _continuousSeconds = {};
-  final Map<String, int> _lastUsageMinutes = {};
+  DateTime? _lastCheckTime;
+  String? _lastActiveForegroundApp;
 
   Future<void> requestPermissions() async {
     if (!await FlutterOverlayWindow.isPermissionGranted()) {
@@ -43,90 +50,231 @@ class AppMonitorService {
     }
   }
 
+  Future<void> initBackgroundService() async {
+    final service = FlutterBackgroundService();
+    await service.configure(
+      androidConfiguration: AndroidConfiguration(
+        onStart: onStart,
+        autoStart: true,
+        isForegroundMode: true,
+        notificationChannelId: 'analog_gate_progress',
+        initialNotificationTitle: 'Analog Gate',
+        initialNotificationContent: 'Monitoring screen time',
+        foregroundServiceNotificationId: 888,
+      ),
+      iosConfiguration: IosConfiguration(
+        autoStart: true,
+        onForeground: onStart,
+      ),
+    );
+  }
+
   void startMonitoring() {
     if (_isMonitoring) return;
     _isMonitoring = true;
     
-    // Poll every 5 seconds for fast detection in test mode
-    _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
-      _checkUsageAndBlock();
-    });
+    final service = FlutterBackgroundService();
+    service.startService();
     
-    // Also check immediately on start
-    _checkUsageAndBlock();
-    print('🔍 App Monitor started! Watching: $_targetPackages');
+    print('🔍 App Monitor background service started!');
   }
 
   void stopMonitoring() {
-    _timer?.cancel();
     _isMonitoring = false;
-    print('App Monitor stopped.');
+    final service = FlutterBackgroundService();
+    service.invoke('stopService');
+    NotificationService().cancelProgressNotification();
+    print('App Monitor background service stopped.');
+  }
+
+  String _formatDuration(int seconds, bool testingMode) {
+    if (testingMode) {
+      return '${seconds}s';
+    }
+    final mins = seconds ~/ 60;
+    final secs = seconds % 60;
+    if (mins > 0) {
+      return '${mins}m ${secs}s';
+    }
+    return '${secs}s';
   }
 
   Future<void> _checkUsageAndBlock() async {
     try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.reload(); // Force reload to get latest values from other processes
+      
+      // 1. Get blocked packages
+      final List<String> blockedPackages = prefs.getStringList('blocked_packages') ?? [];
+      if (blockedPackages.isEmpty) {
+        await NotificationService().cancelProgressNotification();
+        return;
+      }
+
+      // 2. Get active mission limit
+      final String? activeMissionId = prefs.getString('active_mission_id');
+      if (activeMissionId == null || activeMissionId.isEmpty) {
+        await NotificationService().cancelProgressNotification();
+        return;
+      }
+
+      // Find the mission from MissionData
+      final mission = MissionData.all.firstWhere(
+        (m) => m.id == activeMissionId,
+        orElse: () => MissionData.all.first,
+      );
+      final difficulty = mission.difficulty;
+
+      // 3. Get testing mode
+      final bool testingMode = prefs.getBool('testing_mode') ?? false;
+
+      // Calculate time limit in seconds
+      int limitSeconds;
+      if (testingMode) {
+        limitSeconds = switch (difficulty) {
+          MissionDifficulty.easy => 15,
+          MissionDifficulty.medium => 30,
+          MissionDifficulty.hard => 45,
+        };
+      } else {
+        limitSeconds = switch (difficulty) {
+          MissionDifficulty.easy => 10 * 60,
+          MissionDifficulty.medium => 20 * 60,
+          MissionDifficulty.hard => 30 * 60,
+        };
+      }
+
+      int currentAccumulated = prefs.getInt('accumulated_usage_seconds') ?? 0;
+      bool alreadyExceeded = currentAccumulated >= limitSeconds;
+
+      // 4. Check usage and active foreground app
+      final now = DateTime.now();
+      
+      // Determine if a blocked app is active using real-time UsageEvents!
+      bool isAnyBlockedAppActive = false;
+      try {
+        final eventStart = now.subtract(const Duration(seconds: 20));
+        final List<EventUsageInfo> events = await UsageStats.queryEvents(eventStart, now);
+        
+        if (events.isNotEmpty) {
+          // Sort events chronologically by timestamp
+          events.sort((a, b) => int.parse(a.timeStamp!).compareTo(int.parse(b.timeStamp!)));
+          
+          // Find the absolute latest transition event of type '1' (ACTIVITY_RESUMED / MOVE_TO_FOREGROUND)
+          final lastResumeEvent = events.lastWhere(
+            (e) => e.eventType == '1',
+            orElse: () => EventUsageInfo(),
+          );
+          
+          if (lastResumeEvent.packageName != null) {
+            _lastActiveForegroundApp = lastResumeEvent.packageName;
+            print('📱 REALTIME TRANSITION: App entered foreground: $_lastActiveForegroundApp');
+          }
+        }
+      } catch (e) {
+        print('⚠️ Failed to query real-time events: $e');
+      }
+
+      // Evaluate the currently active app context
+      if (_lastActiveForegroundApp != null) {
+        final pkg = _lastActiveForegroundApp!;
+        final isSelf = pkg == 'com.example.analog_gate';
+        final isSystem = pkg == 'com.android.systemui' || pkg == 'com.android.settings';
+        final isLauncher = pkg.contains('launcher') || pkg.contains('trebuchet') || pkg.contains('sec.android.app.launcher') || pkg == 'android';
+        
+        if (!isSelf && !isSystem && !isLauncher) {
+          isAnyBlockedAppActive = blockedPackages.contains(pkg);
+          if (isAnyBlockedAppActive) {
+            print('📱 REALTIME CONFIRMED: User is actively in blocked app: $pkg');
+          }
+        }
+      }
+
+      int elapsedSeconds = 5;
+      if (_lastCheckTime != null) {
+        elapsedSeconds = now.difference(_lastCheckTime!).inSeconds;
+        if (elapsedSeconds > 15) elapsedSeconds = 5;
+      }
+      _lastCheckTime = now;
+
+      // Query historical totals to perform background sync when needed
       final endDate = DateTime.now();
       final startDate = DateTime(endDate.year, endDate.month, endDate.day);
-      
       List<AppUsageInfo> infoList = await AppUsage().getAppUsage(startDate, endDate);
 
+      // Calculate TRUE accumulated time from Android UsageStats
+      int currentTotalUsage = 0;
       for (var info in infoList) {
-        final pkg = info.packageName;
-        if (!_targetPackages.contains(pkg)) continue;
-
-        final currentDailyUsageSeconds = info.usage.inSeconds;
-        final lastUsage = _lastUsageMinutes[pkg] ?? 0;
-
-        // Determine if the app was actively used since last poll
-        if (currentDailyUsageSeconds > lastUsage) {
-          // App is actively being used
-          _continuousSeconds[pkg] = (_continuousSeconds[pkg] ?? 0) + 5;
-          _lastUsageMinutes[pkg] = currentDailyUsageSeconds;
-          print('📱 $pkg active for ${_continuousSeconds[pkg]}s (trigger at ${_continuousEyeLimitSeconds}s)');
-        } else {
-          // App not in use, reset continuous timer
-          if ((_continuousSeconds[pkg] ?? 0) > 0) {
-            print('📱 $pkg went to background, resetting timer');
-          }
-          _continuousSeconds[pkg] = 0;
+        if (blockedPackages.contains(info.packageName)) {
+          currentTotalUsage += info.usage.inSeconds;
         }
+      }
 
-        final continuousSec = _continuousSeconds[pkg] ?? 0;
+      int? baseline = prefs.getInt('baseline_usage_seconds');
+      if (baseline == null) {
+        baseline = currentTotalUsage - currentAccumulated;
+        await prefs.setInt('baseline_usage_seconds', baseline);
+      }
 
-        // Check blocking criteria:
-        bool shouldBlock = false;
-        String reason = "";
+      int trueAccumulated = currentTotalUsage - baseline;
+      if (trueAccumulated < 0) trueAccumulated = 0;
 
-        // 1. Daily accumulated usage limit
-        if (currentDailyUsageSeconds >= _dailyMaxLimitMinutes * 60) {
-          shouldBlock = true;
-          reason = "Daily limit of $_dailyMaxLimitMinutes mins reached!";
-        }
-        // 2. 20-20-20 Rule (Eye Strain) — triggers at 10s in test mode
-        else if (continuousSec >= _continuousEyeLimitSeconds) {
-          shouldBlock = true;
-          reason = "Eye strain warning! Follow the 20-20-20 rule.";
-        }
-        // 3. Posture Fatigue Stretch
-        else if (continuousSec >= _continuousPostureLimitSeconds) {
-          shouldBlock = true;
-          reason = "Screen fatigue! Take a posture correction stretch.";
-        }
-        // 4. Dopamine Habit Loop Breaker
-        else if (continuousSec >= _habitBreakerTriggerSeconds) {
-          final randomValue = Random().nextDouble();
-          if (randomValue < _randomTriggerChance) {
-            shouldBlock = true;
-            reason = "Mindless scrolling detected! Break the habit loop.";
+      // Hybrid real-time tracking logic:
+      if (isAnyBlockedAppActive) {
+        currentAccumulated += elapsedSeconds; // Smooth real-time increment
+      }
+
+      // Sync manual counter with true OS-reported usage
+      if (trueAccumulated > currentAccumulated) {
+        // We missed time (e.g., service was killed). Sync up immediately!
+        currentAccumulated = trueAccumulated;
+      } else if (!isAnyBlockedAppActive && (currentAccumulated - trueAccumulated > 15)) {
+        // We over-counted (e.g., screen was locked while app was open). Sync down!
+        currentAccumulated = trueAccumulated;
+      }
+
+      await prefs.setInt('accumulated_usage_seconds', currentAccumulated);
+
+      if (isAnyBlockedAppActive) {
+        print('⏳ Accumulated usage: ${currentAccumulated}s / ${limitSeconds}s limit');
+
+        // Check if exceeded limit
+        if (currentAccumulated >= limitSeconds) {
+          print('🚫 LIMIT EXCEEDED! Triggering overlay blocking.');
+          await _showBlockOverlay("Active Mission: ${mission.title}");
+          
+          if (!alreadyExceeded) {
+            // First time exceeding! Send notification
+            await NotificationService().showLimitExceededNotification(
+              missionTitle: mission.title,
+            );
           }
         }
-
-        if (shouldBlock) {
-          print('🚫 BLOCKING $pkg: $reason');
-          _continuousSeconds[pkg] = 0; // Reset so it doesn't instantly re-trigger
-          await _showBlockOverlay(reason);
-          break;
+      } else {
+        // If the user is no longer in a blocked app (e.g., they pressed Home),
+        // we should automatically hide the overlay so they can use their phone!
+        try {
+          if (await FlutterOverlayWindow.isActive()) {
+            await FlutterOverlayWindow.closeOverlay();
+            print('✅ User exited blocked app. Hiding overlay.');
+          }
+        } catch (e) {
+          // Ignore
         }
+      }
+
+      // Update progress bar notification
+      if (currentAccumulated < limitSeconds) {
+        final timeUsedStr = _formatDuration(currentAccumulated, testingMode);
+        final timeLimitStr = _formatDuration(limitSeconds, testingMode);
+        await NotificationService().showProgressNotification(
+          title: '⏳ Track Screen Time: ${mission.title}',
+          body: '$timeUsedStr / $timeLimitStr used',
+          progress: currentAccumulated,
+          maxProgress: limitSeconds,
+        );
+      } else {
+        await NotificationService().cancelProgressNotification();
       }
     } catch (e) {
       print('⚠️ Usage check failed: $e');
@@ -134,17 +282,28 @@ class AppMonitorService {
   }
 
   Future<void> _showBlockOverlay(String reason) async {
-    final bool isActive = await FlutterOverlayWindow.isActive();
-    if (!isActive) {
-      await FlutterOverlayWindow.showOverlay(
-        enableDrag: false,
-        flag: OverlayFlag.defaultFlag,
-        alignment: OverlayAlignment.center,
-        visibility: NotificationVisibility.visibilityPublic,
-        positionGravity: PositionGravity.auto,
-        height: WindowSize.matchParent,
-        width: WindowSize.matchParent,
-      );
+    try {
+      final bool isActive = await FlutterOverlayWindow.isActive();
+      if (!isActive) {
+        if (await FlutterOverlayWindow.isPermissionGranted()) {
+          await FlutterOverlayWindow.showOverlay(
+            enableDrag: false,
+            flag: OverlayFlag.defaultFlag,
+            alignment: OverlayAlignment.center,
+            visibility: NotificationVisibility.visibilityPublic,
+            positionGravity: PositionGravity.auto,
+            height: WindowSize.matchParent,
+            width: WindowSize.matchParent,
+          );
+        } else {
+          print('⚠️ Overlay permission not granted. Cannot show block overlay.');
+        }
+      }
+    } catch (e) {
+      // Android 14+ throws ForegroundServiceStartNotAllowedException when
+      // the app is in the background and doesn't hold the required permission.
+      // We catch this so the app does not crash — the overlay simply won't show.
+      print('⚠️ Could not show overlay (background restriction): $e');
     }
   }
 }

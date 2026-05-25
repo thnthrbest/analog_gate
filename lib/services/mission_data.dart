@@ -38,8 +38,8 @@ class MissionData {
     return pool.take(3).map((m) => Mission(
       id: m.id, title: m.title, description: m.description,
       photoPrompt: m.photoPrompt, difficulty: m.difficulty,
-      category: m.category, xp: m.xp, aiLabels: m.aiLabels,
-      icon: m.icon, iconColor: m.iconColor, iconBg: m.iconBg,
+      category: m.category, xp: m.xp, duration: m.duration,
+      aiLabels: m.aiLabels, icon: m.icon, iconColor: m.iconColor, iconBg: m.iconBg,
     )).toList();
   }
 
@@ -53,6 +53,7 @@ class MissionData {
       difficulty: MissionDifficulty.easy,
       category: MissionCategory.outdoor,
       xp: 30,
+      duration: 5,
       aiLabels: ['sky','outdoor','nature','tree','plant','grass','road','building','street'],
       icon: Icons.directions_walk_rounded,
       iconColor: AppTheme.accent,
@@ -66,6 +67,7 @@ class MissionData {
       difficulty: MissionDifficulty.easy,
       category: MissionCategory.outdoor,
       xp: 20,
+      duration: 10,
       aiLabels: ['tree','plant','flower','grass','vegetation','leaf','garden','forest'],
       icon: Icons.park_rounded,
       iconColor: AppTheme.green,
@@ -79,6 +81,7 @@ class MissionData {
       difficulty: MissionDifficulty.easy,
       category: MissionCategory.outdoor,
       xp: 20,
+      duration: 15,
       aiLabels: ['sky','cloud','atmosphere','daytime','sunset','sunrise','blue sky'],
       icon: Icons.wb_sunny_rounded,
       iconColor: AppTheme.amber,
@@ -92,6 +95,7 @@ class MissionData {
       difficulty: MissionDifficulty.medium,
       category: MissionCategory.movement,
       xp: 50,
+      duration: 25,
       aiLabels: ['basketball','sport','ball','court','hoop','sports equipment'],
       icon: Icons.sports_basketball_rounded,
       iconColor: AppTheme.amber,
@@ -105,6 +109,7 @@ class MissionData {
       difficulty: MissionDifficulty.medium,
       category: MissionCategory.reading,
       xp: 50,
+      duration: 20,
       aiLabels: ['book','text','publication','paper','library','paperback'],
       icon: Icons.menu_book_rounded,
       iconColor: AppTheme.amber,
