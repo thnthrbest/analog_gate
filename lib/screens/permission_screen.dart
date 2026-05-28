@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:android_intent_plus/android_intent.dart';
+import 'package:usage_stats/usage_stats.dart';
 import '../theme/app_theme.dart';
 import '../services/app_monitor_service.dart';
 
@@ -17,7 +18,7 @@ class PermissionScreen extends StatefulWidget {
 class _PermissionScreenState extends State<PermissionScreen> {
   bool _cameraGranted = false;
   bool _overlayGranted = false;
-  bool _usageGranted = false; // We can't check this programmatically, user confirms manually
+  bool _usageGranted = false;
   bool _notificationGranted = false;
   bool _batteryOptimizationGranted = false;
 
@@ -36,12 +37,18 @@ class _PermissionScreenState extends State<PermissionScreen> {
       overlayStatus = await _checkOverlayPermission();
     } catch (_) {}
 
+    bool usageStatus = false;
+    try {
+      usageStatus = await UsageStats.checkUsagePermission() ?? false;
+    } catch (_) {}
+
     if (mounted) {
       setState(() {
         _cameraGranted = cameraStatus.isGranted;
         _notificationGranted = notificationStatus.isGranted;
         _overlayGranted = overlayStatus;
         _batteryOptimizationGranted = batteryStatus.isGranted;
+        _usageGranted = usageStatus;
       });
     }
   }

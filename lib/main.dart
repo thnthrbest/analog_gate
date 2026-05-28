@@ -149,10 +149,12 @@ class _RootShellState extends State<_RootShell> {
     if (mounted) {
       setState(() {
         _permissionsChecked = true;
-        _showPermissionScreen = !seen || !allGranted;
+        // Decouple from allGranted: Only show onboarding if they've never completed or skipped it.
+        _showPermissionScreen = !seen;
       });
     }
-    if (seen && allGranted) {
+    // Decouple service start: start monitoring if seen is true, even if some custom ROM statuses report false
+    if (seen) {
       AppMonitorService().startMonitoring();
     }
   }
