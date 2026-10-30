@@ -153,26 +153,57 @@ class AppMonitorService {
       // Determine if a blocked app is active using real-time UsageEvents!
       bool isAnyBlockedAppActive = false;
       try {
-        final eventStart = now.subtract(const Duration(seconds: 20));
+        final eventStart = now.subtract(const Duration(seconds: 15));
         final List<EventUsageInfo> events = await UsageStats.queryEvents(eventStart, now);
         
+        String? detectedApp;
         if (events.isNotEmpty) {
           // Sort events chronologically by timestamp
           events.sort((a, b) => int.parse(a.timeStamp!).compareTo(int.parse(b.timeStamp!)));
           
-          // Find the absolute latest transition event of type '1' (ACTIVITY_RESUMED / MOVE_TO_FOREGROUND)
-          final lastResumeEvent = events.lastWhere(
-            (e) => e.eventType == '1',
-            orElse: () => EventUsageInfo(),
-          );
-          
-          if (lastResumeEvent.packageName != null) {
-            _lastActiveForegroundApp = lastResumeEvent.packageName;
-            print('📱 REALTIME TRANSITION: App entered foreground: $_lastActiveForegroundApp');
+          // Traverse backwards from latest to oldest
+          for (int i = events.length - 1; i >= 0; i--) {
+            final e = events[i];
+            if (e.packageName == null) continue;
+            
+            if (e.eventType == '1') { // MOVE_TO_FOREGROUND / RESUMED
+              detectedApp = e.packageName;
+              break;
+            } else if (e.eventType == '2') { // MOVE_TO_BACKGROUND / PAUSED
+              // If the latest event is putting the current app to background, we clear it
+              if (_lastActiveForegroundApp == e.packageName) {
+                _lastActiveForegroundApp = null;
+              }
+            }
           }
         }
+        
+        if (detectedApp != null) {
+          _lastActiveForegroundApp = detectedApp;
+        } else {
+          // Fallback: If no event in the last 15s, query usage stats for the last 30s
+          final statsStart = now.subtract(const Duration(seconds: 30));
+          final List<UsageInfo> stats = await UsageStats.queryUsageStats(statsStart, now);
+          if (stats.isNotEmpty) {
+            stats.sort((a, b) {
+              final aTime = int.tryParse(a.lastTimeUsed ?? '0') ?? 0;
+              final bTime = int.tryParse(b.lastTimeUsed ?? '0') ?? 0;
+              return bTime.compareTo(aTime);
+            });
+            final latest = stats.first;
+            final latestTime = int.tryParse(latest.lastTimeUsed ?? '0') ?? 0;
+            // If the latest app was used within the last 12 seconds
+            if (now.millisecondsSinceEpoch - latestTime < 12000) {
+              _lastActiveForegroundApp = latest.packageName;
+            }
+          }
+        }
+        
+        if (_lastActiveForegroundApp != null) {
+          print('📱 DETECTED FOREGROUND APP: $_lastActiveForegroundApp');
+        }
       } catch (e) {
-        print('⚠️ Failed to query real-time events: $e');
+        print('⚠️ Failed to query real-time events/stats: $e');
       }
 
       // Evaluate the currently active app context
@@ -180,10 +211,10 @@ class AppMonitorService {
         final pkg = _lastActiveForegroundApp!;
         final isSelf = pkg == 'com.example.analog_gate';
         final isSystem = pkg == 'com.android.systemui' || pkg == 'com.android.settings';
-        final isLauncher = pkg.contains('launcher') || pkg.contains('trebuchet') || pkg.contains('sec.android.app.launcher') || pkg == 'android';
+        final isLauncher = pkg.contains('launcher') || pkg.contains('trebuchet') || pkg.contains('sec.android.app.launcher') || pkg.contains('home') || pkg == 'android';
         
         if (!isSelf && !isSystem && !isLauncher) {
-          isAnyBlockedAppActive = blockedPackages.contains(pkg);
+          isAnyBlockedAppActive = _isPackageBlocked(pkg, blockedPackages);
           if (isAnyBlockedAppActive) {
             print('📱 REALTIME CONFIRMED: User is actively in blocked app: $pkg');
           }
@@ -292,7 +323,7 @@ class AppMonitorService {
             alignment: OverlayAlignment.center,
             visibility: NotificationVisibility.visibilityPublic,
             positionGravity: PositionGravity.auto,
-            height: WindowSize.matchParent,
+            height: WindowSize.fullCover,
             width: WindowSize.matchParent,
           );
         } else {
@@ -305,5 +336,34 @@ class AppMonitorService {
       // We catch this so the app does not crash — the overlay simply won't show.
       print('⚠️ Could not show overlay (background restriction): $e');
     }
+  }
+
+  bool _isPackageBlocked(String packageName, List<String> blockedPackages) {
+    for (var blocked in blockedPackages) {
+      if (blocked == packageName) return true;
+      
+      // YouTube variant mapping
+      if (blocked == 'com.google.android.youtube') {
+        if (packageName == 'com.google.android.youtube' ||
+            packageName == 'com.google.android.apps.youtube.lite' ||
+            packageName == 'com.vanced.android.youtube' ||
+            packageName == 'app.revanced.android.youtube') {
+          return true;
+        }
+      }
+      
+      // TikTok variant mapping
+      if (blocked == 'com.zhiliaoapp.musically' || blocked == 'com.ss.android.ugc.trill') {
+        if (packageName == 'com.zhiliaoapp.musically' ||
+            packageName == 'com.ss.android.ugc.aweme' ||
+            packageName == 'com.zhiliaoapp.musically.go' ||
+            packageName == 'com.ss.android.ugc.aweme.lite' ||
+            packageName == 'com.ss.android.ugc.trill' ||
+            packageName == 'com.ss.android.ugc.trill.lite') {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 }

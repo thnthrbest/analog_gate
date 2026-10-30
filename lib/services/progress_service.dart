@@ -90,8 +90,7 @@ class ProgressService {
         _todayCompleted = [];
         _todayUnlockedApps = [];
         
-        // Write cleared lists and current streak to Supabase so that DB is reset too
-        await _saveToSupabase();
+        // Server resets its own daily lists on the next mission or unlock
         print('🧹 Sync: New day detected. Wiped Supabase completed lists and synchronized streak: $_streak');
       } else {
         _todayCompleted = profile.todayCompleted;
@@ -129,51 +128,22 @@ class ProgressService {
 
   Future<bool> completeMission(String missionKey, int xp) async {
     if (_todayCompleted.contains(missionKey)) return true; // Already done
-
-    _todayCompleted = [..._todayCompleted, missionKey];
-    _totalXp += xp;
-    
-    // Update streak history for today
-    final dayOfWeek = DateTime.now().weekday % 7; // Sunday=0, Monday=1...
-    _weekHistory[dayOfWeek] = true;
-    
-    // Check if it's their first mission today to increment streak
-    if (_todayCompleted.length == 1) {
-      _streak += 1;
-    }
-
+    // verify-photo already recorded the mission on the server; re-read the result.
+    await _syncFromSupabase();
     _saveToCache();
-    await _saveToSupabase();
     return true;
   }
 
   Future<void> unlockApp(String appId) async {
-    if (!_todayUnlockedApps.contains(appId)) {
-      _todayUnlockedApps = [..._todayUnlockedApps, appId];
-      _saveToCache();
-      await _saveToSupabase();
-    }
-  }
-
-  Future<void> _saveToSupabase() async {
-    final user = _supabase.auth.currentUser;
-    if (user == null) return;
-
+    if (_todayUnlockedApps.contains(appId)) return;
     try {
-      final now = DateTime.now();
-      await _supabase.from('profiles').upsert({
-        'id': user.id,
-        'total_xp': _totalXp,
-        'current_streak': _streak,
-        'last_active_date': "${now.year}-${now.month.toString().padLeft(2,'0')}-${now.day.toString().padLeft(2,'0')}",
-        'today_completed': _todayCompleted,
-        'today_unlocked': _todayUnlockedApps,
-        'week_history': _weekHistory,
-        'updated_at': now.toUtc().toIso8601String(),
-      });
+      await _supabase.rpc('unlock_app', params: {'p_app_id': appId});
     } catch (e) {
-      print('Save Error: $e');
+      print('Unlock app failed: $e');
+      return;
     }
+    await _syncFromSupabase();
+    _saveToCache();
   }
 
   void _loadFromCache() {
@@ -242,7 +212,6 @@ class ProgressService {
     await resetAccumulatedUsage();
     
     _saveToCache();
-    await _saveToSupabase();
     return true;
   }
 

@@ -1,0 +1,94 @@
+================================================================================
+DEVELOPING "ANALOG GATE": AN AI-VERIFIED PHYSICAL ACTION-AUTHENTICATION SOLUTION
+================================================================================
+
+1. Background or concept of the study
+   1.1. Cognitive & Behavioral Impact of Short-Form Videos
+        - The rise of immediate-gratification media (TikTok, Shorts, Reels) and its role in accelerating digital dopamine dependency in teenagers.
+        - The "Popcorn Brain" phenomenon, characterized by reduced sustained attention span, difficulty in deep reading comprehension, and weakened critical thinking.
+   1.2. The Need for Physical Interventions in Screen-Time Management
+        - Limitations of existing screen-time management apps (which rely on easily bypassable soft reminders or simple passcodes).
+        - The theory of "Intentional Friction" and "Delayed Gratification" as mechanisms to break automatic, compulsive scrolling loops.
+
+2. Real-Life Social Problems
+   2.1. Dopamine Dependence & Compulsive Scrolling Loops
+        - The psychological trap of endless scrolling, where users receive continuous micro-stimulations, losing control over screen duration.
+        - The decline of active real-world hobbies, reading habits, and face-to-face communication.
+   2.2. Sedentary Habits and Physical Ailments
+        - Physical side effects of excessive screen-time, such as "tech neck" (cervical spine strain), poor eyesight, and sleep deprivation.
+        - The reduction of physical activity due to sedentary digital habits.
+
+3. Research Questions/Objectives
+   3.1. Technical Feasibility of AI-Verified Physical Action Barriers
+        - How can system-level overlay blocking and real-time AI image verification be implemented to prevent screen time cheating?
+        - Can cloud-based AI (Gemini) and on-device ML Kit accurately verify offline activities (like walking or reading) in real-time?
+   3.2. Efficacy of Delayed Gratification on Digital Detox
+        - Does forcing a physical action barrier before unlocking target apps successfully decrease daily screen-time?
+        - How does gamifying real-world tasks (XP, streaks) affect user motivation to step away from screens?
+
+4. AI-Based Solution
+   To combat the declining literacy and "popcorn brain" phenomenon caused by short-form addiction, this project utilizes Gemini AI as its core technological tool to operate a gamified digital detox application called "Analog Gate", which is developed using Flutter and Riverpod for cross-platform UI, and Supabase for cloud database management. The AI functions and operates through the following mechanisms:
+
+   The AI Gatekeeper Mechanism: When a user exceeds their daily time limit for highly stimulating apps (e.g., YouTube Shorts, TikTok), the Analog Gate app—running a persistent Android background service that queries the UsageStatsManager API—detects the foreground active package and programmatically forces a system-level lock screen using the SYSTEM_ALERT_WINDOW overlay permission. To regain access, the user cannot simply tap a button; they must complete a real-world "Active Mission" (e.g., taking a light walk, reading a physical book, finding a green plant) selected from a localized mission pool.
+
+   Real-time Image Classification & Verification: The user takes a photo to prove they completed the physical task. The app initiates a secure camera workflow that disables gallery uploads to prevent cheating. Gemini AI is applied to instantly analyze and classify this submitted image in real-time. It acts as an anti-cheat system by accurately detecting contextual tags (e.g., recognizing "outdoor" or "tree" for a success, or detecting an "indoor screen" as a failure), with an on-device Google ML Kit Image Labeling engine acting as a local offline fallback.
+
+   Enforcing Delayed Gratification: Only when the Gemini AI grants an "AI Verified" stamp does the screen unlock, which closes the overlay blocker, resets the target app's usage timer, updates the user's progress database in Supabase, and awards XP. This AI-operated intentional delay physically forces users to break their compulsive scrolling loop, translating passive digital consumption into active physical movements.
+
+5. Literature Review
+   5.1. Short-Form Media and Cognitive Deterioration
+        - Academic studies explaining how highly stimulating, 15-second videos structurally adapt the teenage brain to expect instant rewards.
+        - Research on how digital fatigue impacts academic performance, deep reading literacy, and vocabulary retention.
+   5.2. Gamification and Behavioral Therapy in Digital Detox
+        - Theoretical frameworks behind gamification elements (experience points, leveling, streaks) as tools for positive reinforcement in habit creation.
+        - Principles of behavioral therapy focused on replacing digital scrolling loops with healthier physical habits.
+
+6. Research Design/Methodology
+   (Planning the investigation (qualitative or quantitative).
+
+   The 5 Stages of Design Thinking
+   This information provides an overview of the five stages of the design thinking process: 
+
+   1. Empathize (Research User Needs): Conduct interviews, observations, and surveys to understand the audience's experiences, emotions, and motivations.
+   2. Define (Frame the Problem): Synthesize research findings into a actionable "problem statement" focused on user insights.
+   3. Ideate (Generate Solutions): Brainstorm a wide range of creative solutions, challenging assumptions to look at the problem from new perspectives.
+   4. Prototype (Build Testable Versions): Create low-fidelity, inexpensive models to represent the best ideas, allowing for quick testing and iteration.
+   5. Test (Refine and Iterate): Test the prototypes with real users to get feedback, refine the solutions, and often return to previous stages.
+
+   This study utilizes the 5 Stages of Design Thinking framework to systematically develop and evaluate the "Analog Gate" application through continuous collaboration between Korean and Thai students.
+
+   1. Empathize (Research User Needs): We conduct preliminary surveys and behavioral observations to deeply understand the target audience's experiences, emotions, and motivations regarding short-form video consumption. Through this, we gather data on their emotional dependency on digital dopamine, "popcorn brain" symptoms, and digital fatigue. We also identify user frustration with traditional, easily bypassable screen-time controls, highlighting the need for an inescapable overlay blocking interface.
+
+   2. Define (Frame the Problem): We synthesize the research findings into an actionable problem statement focused on user insights: "Adolescents are trapped in a compulsive scrolling loop that degrades their reading literacy and physical health. A simple screen-time notification is insufficient; they require a physical intervention that actively breaks this loop." This physical intervention must programmatically draw a system-level overlay locker over target packages using native background services to restrict interaction until offline tasks are verified.
+
+   3. Ideate (Generate Solutions): Through cross-cultural brainstorming sessions between Korean and Thai students, we challenge traditional app-blocking assumptions and look at the problem from new perspectives. We generate the core concept of the "Analog Gate"—an AI Dopamine Gatekeeper that requires users to complete real-world physical tasks (e.g., walking, reading) to unlock their devices. The concept features an active mission selection screen, a secure camera pipeline disabling gallery bypasses, and a gamified leveling/XP reward database to reinforce positive digital detox habits.
+
+   4. Prototype (Build Testable Versions): We create a low-fidelity, testable model of the Analog Gate app to represent our best ideas. This prototype is developed using Flutter for responsive cross-platform UI, Riverpod for state management, and Supabase for cloud database sync. It integrates Gemini AI API and local Google ML Kit Image Labeling to build an action-authentication mechanism. The prototype implements Android native permissions (Usage Access API via android.permission.PACKAGE_USAGE_STATS and Display Over Other Apps API via android.permission.SYSTEM_ALERT_WINDOW) to test the complete user journey: hitting a usage limit, receiving an offline mission, capturing a live photo, and undergoing AI verification to close the locker.
+
+   5. Test (Refine and Iterate): We test the prototype with real users to get feedback and refine the solutions. We collect quantitative telemetry data (e.g., daily screen time reduction, overlay trigger reliability, AI verification success rates, and user streak retention logs) and qualitative open-ended survey responses. This feedback helps us measure the app's effectiveness and allows us to return to previous stages to improve the AI's prompt constraints, reduce false rejections, and optimize background CPU usage.
+
+7. Data Collection
+   7.1. App Telemetry Data Logging
+        - Automated tracking of screen-time reduction, app lock-out frequency, and target app usage history.
+        - Logging mission success/failure rates and the average time taken to complete active physical missions.
+   7.2. Qualitative and Quantitative User Feedback
+        - Distributing pre-intervention and post-intervention surveys to measure improvements in students' self-reported focus and physical fatigue.
+
+8. Analyzing Data
+   8.1. Evaluating Screen-Time Reduction Efficacy
+        - Comparative statistical analysis of user screen-time before and after using the Analog Gate application.
+   8.2. AI Verification Accuracy & False Positives/Negatives
+        - Analyzing API logs to calculate the accuracy of Gemini AI in recognizing completed tasks and detecting spoofing attempts.
+
+9. Evaluation
+   9.1. Recovery of Sustained Attention Span
+        - Evaluating changes in user concentration levels and deep reading capacity during digital detox periods.
+   9.2. Habit Formation and User Retention
+        - Assessing user engagement trends with real-world missions through streak tracking and level progression logs.
+
+10. Research Findings and Conclusion
+    10.1. Efficacy of AI-Verified Action Barriers
+          - Confirming if replacing passive screen-time limits with active physical verification successfully breaks scrolling loops.
+          - Demonstrating that physical reactivation helps alleviate physical ailments like tech neck.
+    10.2. Recommendations for Future Technical Enhancements
+          - Suggested improvements: Enhancing on-device ML Kit capabilities for full offline operation and extending overlay locker support to iOS systems.

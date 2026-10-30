@@ -6,9 +6,8 @@ import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
 import '../models/models.dart';
 import '../services/photo_verification_service.dart';
-import '../services/gemini_verification_service.dart';
+import '../services/photo_verifier_service.dart';
 import '../services/progress_service.dart';
-import '../providers/profile_provider.dart';
 
 enum _Step { prompt, verifying, success, failed }
 
@@ -25,7 +24,7 @@ class _GateScreenState extends ConsumerState<GateScreen> {
   String? _photoPath;
   VerificationResult? _result;
 
-  final _verifier  = GeminiVerificationService();
+  final _verifier  = PhotoVerifierService();
   final _progress  = ProgressService();
   final _picker    = ImagePicker();
 
@@ -43,13 +42,7 @@ class _GateScreenState extends ConsumerState<GateScreen> {
       _step = _Step.verifying;
     });
 
-    final profileService = ref.read(profileServiceProvider);
-    
-    final result = await _verifier.verifyWithAI(
-      imagePath: file.path,
-      profileImagePath: profileService.cachedAvatarPath, // Pass the face!
-      requiredObject: widget.mission.aiLabels.isNotEmpty ? widget.mission.aiLabels.first : widget.mission.title,
-    );
+    final result = await _verifier.verify(imagePath: file.path, missionId: widget.mission.id);
 
     if (!mounted) return;
     setState(() {

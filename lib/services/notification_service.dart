@@ -17,7 +17,7 @@ class NotificationService {
     );
 
     await _localNotificationsPlugin.initialize(
-      initializationSettings,
+      settings: initializationSettings,
     );
 
     // Create the required notification channels explicitly so they are
@@ -77,10 +77,10 @@ class NotificationService {
     );
 
     await _localNotificationsPlugin.show(
-      999, // Unique ID
-      '⏳ Screen Time Limit Reached!',
-      'Complete active mission "$missionTitle" to unlock your apps.',
-      platformChannelSpecifics,
+      id: 999, // Unique ID
+      title: '⏳ Screen Time Limit Reached!',
+      body: 'Complete active mission "$missionTitle" to unlock your apps.',
+      notificationDetails: platformChannelSpecifics,
     );
   }
 
@@ -110,14 +110,14 @@ class NotificationService {
     );
 
     await _localNotificationsPlugin.show(
-      888, // Unique ID for progress tracking
-      title,
-      body,
-      platformChannelSpecifics,
+      id: 888, // Unique ID for progress tracking
+      title: title,
+      body: body,
+      notificationDetails: platformChannelSpecifics,
     );
   }
 
   Future<void> cancelProgressNotification() async {
-    await _localNotificationsPlugin.cancel(888);
+    await _localNotificationsPlugin.cancel(id: 888);
   }
 }

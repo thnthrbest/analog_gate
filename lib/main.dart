@@ -5,7 +5,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'services/progress_service.dart';
-import 'services/gemini_verification_service.dart';
 import 'theme/app_theme.dart';
 import 'screens/home_screen.dart';
 import 'screens/progress_screen.dart';
@@ -21,6 +20,14 @@ import 'services/notification_service.dart';
 @pragma("vm:entry-point")
 void overlayMain() {
   WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
+    statusBarColor: Colors.transparent,
+    statusBarIconBrightness: Brightness.light,
+    systemNavigationBarColor: Colors.black,
+    systemNavigationBarIconBrightness: Brightness.light,
+    systemNavigationBarDividerColor: Colors.black,
+  ));
   runApp(const MaterialApp(
     debugShowCheckedModeBanner: false,
     home: OverlayScreen(),
@@ -44,15 +51,15 @@ void main() async {
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
-  // Supabase URL: Pointing to the new VPS server
-  const supabaseUrl = 'http://187.77.157.222:8000';
+  // Supabase Cloud project (analog_gate)
+  const supabaseUrl = 'https://jvdyfsfvwwzhaiwmwwql.supabase.co';
 
   // Init Supabase (with timeout so app doesn't hang if Supabase is offline)
   bool supabaseReady = false;
   try {
     await Supabase.initialize(
       url: supabaseUrl,
-      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyAgCiAgICAicm9sZSI6ICJhbm9uIiwKICAgICJpc3MiOiAic3VwYWJhc2UtZGVtbyIsCiAgICAiaWF0IjogMTY0MTc2OTIwMCwKICAgICJleHAiOiAxNzk5NTM1NjAwCn0.dc_X5iR_VP_qT0zsiyj_I_OZ2T9FtRU2BBNWN8Bu4GE',
+      anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp2ZHlmc2Z2d3d6aGFpd213d3FsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODU4MDYsImV4cCI6MjEwODg2MTgwNn0.K5TQ1y3btudXYWvz2po3-odGTuqMC7Ex341AJq6sbaw',
     ).timeout(const Duration(seconds: 8));
     supabaseReady = true;
     print('Supabase connected successfully!');
@@ -61,7 +68,6 @@ void main() async {
   }
 
   // Init services
-  GeminiVerificationService().init();
   await NotificationService().init();
   if (supabaseReady) {
     await ProgressService().init();

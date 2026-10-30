@@ -55,7 +55,7 @@ ALTER TABLE public.missions ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Missions are viewable by authenticated users" 
     ON public.missions FOR SELECT 
     TO authenticated 
-    USING (true);
+    USING (true);   
 
 -- 3. Set up Storage for Avatars
 -- (Run this if you haven't created the 'avatars' bucket in the dashboard)
